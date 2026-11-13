@@ -1,8 +1,8 @@
 <?xml version="1.0" standalone="yes"?>
 <!DOCTYPE PLUGIN [
 <!ENTITY name "thevault.login">
-<!ENTITY author "Asuka">
-<!ENTITY version "2026.10.19h">
+<!ENTITY author "Christopher Deal">
+<!ENTITY version "2026.11.13a">
 <!ENTITY plugdir "/usr/local/emhttp/plugins/&name;">
 <!ENTITY pluginURL "https://raw.githubusercontent.com/gunner007cd/thevault-login/main/thevault.login.plg">
 <!ENTITY support "https://github.com/gunner007cd/thevault-login">
@@ -16,6 +16,11 @@
         min="7.3.2"
         icon="lock">
 <CHANGES>
+###2026.11.13a
+- Changed the plugin author to Christopher Deal.
+- Added server uptime below the Unraid version on the login screen, read from /proc/uptime on each page load.
+- Kept native authentication and original login artwork unchanged.
+
 ###2026.10.19h
 - Re-published the complete self-contained plugin after the first GitHub copy was truncated during upload.
 - No functional login or authentication changes from 2026.10.19g.
@@ -64,7 +69,7 @@
 set -eu
 
 NAME="thevault.login"
-VERSION="2026.10.19h"
+VERSION="2026.11.13a"
 PLUGDIR="/usr/local/emhttp/plugins/$NAME"
 PRIMARY="/usr/local/emhttp/webGui/include/.login.php"
 MIRROR="/usr/local/emhttp/plugins/dynamix/include/.login.php"
@@ -75,7 +80,7 @@ mkdir -p "$PLUGDIR"
 cat > "$PLUGDIR/README.md" <<'EOF_THEVAULT_README'
 **TheVault Login**
 
-A login-only visual customization for TheVault's Unraid sign-in page. It keeps Unraid's native authentication, sessions, SSO, rate limiting, and password recovery untouched while presenting the stock login form as a responsive split-screen layout with locally embedded homelab artwork and a subtle running Unraid version footer.
+A login-only visual customization for TheVault's Unraid sign-in page. It keeps Unraid's native authentication, sessions, SSO, rate limiting, and password recovery untouched while presenting the stock login form as a responsive split-screen layout with locally embedded homelab artwork and a subtle Unraid version and server uptime footer.
 
 EOF_THEVAULT_README
 chmod 0644 "$PLUGDIR/README.md"
@@ -254,6 +259,15 @@ body::before {
     font-size: 0.72rem;
     font-weight: 500;
     letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+#thevault-login-uptime {
+    margin-top: 5px;
+    color: #66727f;
+    font-size: 0.69rem;
+    font-weight: 500;
+    letter-spacing: 0.10em;
     text-transform: uppercase;
 }
 
@@ -2577,7 +2591,24 @@ $css = str_replace(
 
 $block = "\n<style id=\"thevault-login-style\">\n" . $css . "\n</style>\n";
 $verHtml = htmlspecialchars($ver, ENT_QUOTES, 'UTF-8');
-$versionBlock = "\n            <div id=\"thevault-login-version\">UNRAID {$verHtml}</div>\n";
+// The patched .login.php runs as PHP on each page request. Keep uptime
+// evaluated there, rather than freezing it at plugin installation time.
+$uptimeBlock = <<<'THEVAULT_UPTIME'
+            <div id="thevault-login-uptime"><?php
+$tvRawUptime = @file_get_contents('/proc/uptime');
+$tvFirstField = $tvRawUptime === false ? '' : strtok($tvRawUptime, " \t");
+$tvUptimeSeconds = is_numeric($tvFirstField) ? (int) floor((float) $tvFirstField) : null;
+if ($tvUptimeSeconds !== null) {
+    $tvDays = intdiv($tvUptimeSeconds, 86400);
+    $tvHours = intdiv($tvUptimeSeconds % 86400, 3600);
+    $tvMinutes = intdiv($tvUptimeSeconds % 3600, 60);
+    printf('UPTIME %dd %dh %dm', $tvDays, $tvHours, $tvMinutes);
+} else {
+    echo 'UPTIME UNAVAILABLE';
+}
+?></div>
+THEVAULT_UPTIME;
+$versionBlock = "\n            <div id=\"thevault-login-version\">UNRAID {$verHtml}</div>\n" . $uptimeBlock . "\n";
 $patched = 0;
 
 foreach ($targets as $path) {
@@ -2618,6 +2649,11 @@ foreach ($targets as $path) {
         "\n",
         $text
     );
+    $text = preg_replace(
+        '#\s*<div id="thevault-login-uptime">.*?</div>\s*#s',
+        "\n",
+        $text
+    );
 
     $text = preg_replace('#</head>#', $block . '</head>', $text, 1, $headCount);
     $text = preg_replace(
@@ -2638,11 +2674,11 @@ if ($patched < 1) {
     exit(0);
 }
 
-echo "TheVault Login: inline split theme + real version footer applied to $patched template(s); Unraid $ver.\n";
+echo "TheVault Login: inline split theme + real version and uptime footer applied to $patched template(s); Unraid $ver.\n";
 ?>
 PHP_THEVAULT_INSTALL
 
-logger -t thevault-login "TheVault inline split login theme with version footer applied"
+logger -t thevault-login "TheVault inline split login theme with version and uptime footer applied"
 echo "TheVault Login $VERSION installed."
 echo "Open /login in a private window to preview it."
 ]]></INLINE>
@@ -2685,6 +2721,11 @@ foreach ($targets as $path) {
     );
     $text = preg_replace(
         '#\s*<div id="thevault-login-version">.*?</div>\s*#s',
+        "\n",
+        $text
+    );
+    $text = preg_replace(
+        '#\s*<div id="thevault-login-uptime">.*?</div>\s*#s',
         "\n",
         $text
     );
